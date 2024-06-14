@@ -1,40 +1,54 @@
-addEventListener("fetch", (event) => {
-  event.passThroughOnException();
-  event.respondWith(handleRequest(event.request));
-});
-
 const dockerHubAPIEndpoint = "https://registry-1.docker.io";
 
-async function handleRequest(request) {
-  const requestUrl = new URL(request.url);
-  const proxyUrl = new URL(dockerHubAPIEndpoint + requestUrl.pathname);
-  const headers = new Headers(request.headers);
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      ctx.passThroughOnException();
+      const requestUrl = new URL(request.url);
+      const proxyUrl = new URL(dockerHubAPIEndpoint + requestUrl.pathname);
+      const headers = new Headers(request.headers);
 
-  if (requestUrl.pathname.startsWith("/v2/")) {
-    const response = await fetch(proxyUrl.toString(), { method: "GET", headers, redirect: "follow" });
-    if (response.status === 401) {
-      const authHeader = response.headers.get("WWW-Authenticate");
-      if (authHeader) {
-        headers.set("WWW-Authenticate", authHeader);
+      if (requestUrl.pathname.startsWith("/v2/")) {
+        const response = await fetch(proxyUrl.toString(), {
+          method: "GET",
+          headers,
+          redirect: "follow",
+        });
+        if (response.status === 401) {
+          const authHeader = response.headers.get("WWW-Authenticate");
+          if (authHeader) {
+            headers.set("WWW-Authenticate", authHeader);
+          }
+          return new Response(
+            JSON.stringify({ message: "Authentication required" }),
+            {
+              status: 401,
+              headers: headers,
+            }
+          );
+        } else {
+          return response;
+        }
+      } else if (requestUrl.pathname === "/v2/auth") {
+        return handleAuthRoute(
+          requestUrl,
+          proxyUrl,
+          headers,
+          request.headers.get("Authorization")
+        );
+      } else {
+        const newRequest = new Request(proxyUrl, {
+          method: request.method,
+          headers: request.headers,
+          redirect: "follow",
+        });
+        return fetch(newRequest);
       }
-      return new Response(JSON.stringify({ message: "Authentication required" }), {
-        status: 401,
-        headers: headers
-      });
-    } else {
-      return response;
+    } catch (error) {
+      return new Response(`Server error: ${error.message}`, { status: 500 });
     }
-  } else if (requestUrl.pathname === "/v2/auth") {
-    return handleAuthRoute(requestUrl, proxyUrl, headers, request.headers.get("Authorization"));
-  } else {
-    const newRequest = new Request(proxyUrl, {
-      method: request.method,
-      headers: request.headers,
-      redirect: "follow"
-    });
-    return fetch(newRequest);
-  }
-}
+  },
+};
 
 async function handleAuthRoute(originalUrl, proxyUrl, headers, authorizationToken) {
   const response = await fetch(proxyUrl.toString(), { method: "GET", headers });
@@ -64,7 +78,7 @@ function parseAuthHeader(authHeader) {
 
 function adjustScopeForLibraryImages(scope) {
   let scopeParts = scope.split(":");
-  if (scopeParts.length == 3 && !scopeParts[1].includes("/")) {
+  if (scopeParts.length === 3 && !scopeParts[1].includes("/")) {
     scopeParts[1] = "library/" + scopeParts[1];
   }
   return scopeParts.join(":");
@@ -82,9 +96,7 @@ async function fetchAuthToken(authDetails, scope, authorizationToken) {
   const headers = new Headers();
   if (authorizationToken) {
     headers.set("Authorization", authorizationToken);
-  } else {
-    headers.delete("Authorization");
   }
 
-  return await fetch(tokenUrl, { method: "GET", headers: headers });
+  return await fetch(tokenUrl, { method: "GET", headers });
 }
