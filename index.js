@@ -9,7 +9,11 @@ export default {
       let response = await cache.match(cacheKey);
       if (response) return response;
 
-      response = await fetch(url.toString(), request);
+      response = await fetch(url.toString(), {
+        ...request,
+        redirect: 'follow'
+      });
+      
       if (!response.ok && ![304].includes(response.status)) {
         return new Response(`Fetch error: Unable to fetch ${url.toString()}. Status: ${response.status}`, { status: response.status });
       }
