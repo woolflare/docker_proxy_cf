@@ -3,9 +3,8 @@ const dockerHubAPIEndpoint = "https://registry-1.docker.io";
 export default {
   async fetch(request, env, ctx) {
     try {
-      ctx.passThroughOnException();
       const requestUrl = new URL(request.url);
-      const proxyUrl = new URL(dockerHubAPIEndpoint + requestUrl.pathname);
+      const proxyUrl = new URL(requestUrl.pathname, dockerHubAPIEndpoint);
       const headers = new Headers(request.headers);
 
       if (requestUrl.pathname.startsWith("/v2/")) {
@@ -17,6 +16,7 @@ export default {
         if (response.status === 401) {
           const authHeader = response.headers.get("WWW-Authenticate");
           if (authHeader) {
+            headers.delete("WWW-Authenticate");
             headers.set("WWW-Authenticate", authHeader);
           }
           return new Response(
@@ -98,5 +98,11 @@ async function fetchAuthToken(authDetails, scope, authorizationToken) {
     headers.set("Authorization", authorizationToken);
   }
 
-  return await fetch(tokenUrl, { method: "GET", headers });
+  const response = await fetch(tokenUrl, { method: "GET", headers });
+
+  if (!response.ok) {
+    return new Response(`Failed to fetch token. Status: ${response.status}`, { status: response.status });
+  }
+
+  return response;
 }
